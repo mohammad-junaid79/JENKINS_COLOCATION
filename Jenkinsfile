@@ -4,8 +4,8 @@ pipeline {
         VENV_DIR = 'venv'
         APP_HOST = '0.0.0.0'
         APP_PORT = '8000'
-        SERVICE_NAME = 'fastapi-app'  // Change to your actual service name
-        APP_DIR = '/path/to/your/app'  // Change to your actual app directory
+        SERVICE_NAME = 'fastapi'
+        APP_DIR = '/var/lib/jenkins/workspace/fastapi_colocation'
     }
     stages {
         stage('Checkout') {
@@ -32,7 +32,7 @@ pipeline {
                 echo '🛑 Stopping FastAPI service...'
                 sh '''
                     # Stop the systemd service
-                    sudo systemctl stop $fastapi || true
+                    sudo systemctl stop $SERVICE_NAME || true
                     
                     # Kill any remaining processes
                     pkill -f "uvicorn main:app" || true
@@ -58,13 +58,13 @@ pipeline {
                 echo '🚀 Starting FastAPI service...'
                 sh '''
                     # Start the systemd service
-                    sudo systemctl start $fastapi
+                    sudo systemctl start $SERVICE_NAME
                     
                     # Wait for service to start
                     sleep 5
                     
                     # Check service status
-                    sudo systemctl status $fastapi --no-pager
+                    sudo systemctl status $SERVICE_NAME --no-pager
                 '''
             }
         }
@@ -76,7 +76,7 @@ pipeline {
                     sleep 3
                     
                     # Check if service is active
-                    if ! sudo systemctl is-active --quiet $fastapi; then
+                    if ! sudo systemctl is-active --quiet $SERVICE_NAME; then
                         echo "❌ Service is not active!"
                         exit 1
                     fi
@@ -98,7 +98,7 @@ pipeline {
             echo '❌ Pipeline failed! Check the logs for details.'
             sh '''
                 echo "📋 Service logs:"
-                sudo journalctl -u $fastapi -n 50 --no-pager
+                sudo journalctl -u $SERVICE_NAME -n 50 --no-pager
             '''
         }
     }
