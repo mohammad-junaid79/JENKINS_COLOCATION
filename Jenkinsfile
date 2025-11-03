@@ -58,5 +58,12 @@ pipeline {
     }
     
     post {
-        success {
-            echo '✅ Pipeline complete
+    success {
+        echo '✅ Pipeline completed successfully!'
+        echo '🚀 FastAPI running: http://192.168.35.35:8000'
+        echo '📖 API docs: http://192.168.35.35:8000/docs'
+    }
+    failure {
+        echo '❌ Pipeline failed! Check logs for details.'
+    }
+}
