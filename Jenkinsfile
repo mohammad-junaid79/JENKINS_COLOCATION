@@ -32,7 +32,7 @@ pipeline {
                 echo '🛑 Stopping FastAPI service...'
                 sh '''
                     # Stop the systemd service
-                    sudo systemctl stop $SERVICE_NAME || true
+                    sudo systemctl stop $fastapi || true
                     
                     # Kill any remaining processes
                     pkill -f "uvicorn main:app" || true
@@ -58,13 +58,13 @@ pipeline {
                 echo '🚀 Starting FastAPI service...'
                 sh '''
                     # Start the systemd service
-                    sudo systemctl start $SERVICE_NAME
+                    sudo systemctl start $fastapi
                     
                     # Wait for service to start
                     sleep 5
                     
                     # Check service status
-                    sudo systemctl status $SERVICE_NAME --no-pager
+                    sudo systemctl status $fastapi --no-pager
                 '''
             }
         }
@@ -76,7 +76,7 @@ pipeline {
                     sleep 3
                     
                     # Check if service is active
-                    if ! sudo systemctl is-active --quiet $SERVICE_NAME; then
+                    if ! sudo systemctl is-active --quiet $fastapi; then
                         echo "❌ Service is not active!"
                         exit 1
                     fi
@@ -98,7 +98,7 @@ pipeline {
             echo '❌ Pipeline failed! Check the logs for details.'
             sh '''
                 echo "📋 Service logs:"
-                sudo journalctl -u $SERVICE_NAME -n 50 --no-pager
+                sudo journalctl -u $fastapi -n 50 --no-pager
             '''
         }
     }
