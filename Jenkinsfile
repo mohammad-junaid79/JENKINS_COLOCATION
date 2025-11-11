@@ -53,7 +53,7 @@ pipeline {
             steps {
                 echo '🔄 Restarting FastAPI service...'
                 sh '''
-                    sudo systemctl restart fastapi.service
+                    sudo systemctl restart fast.service
                     sleep 3
                 '''
             }
@@ -64,7 +64,7 @@ pipeline {
                 echo '🔍 Verifying FastAPI is running...'
                 sh '''
                     # Check if service is active
-                    sudo systemctl is-active --quiet fastapi.service || (echo "❌ FastAPI service is not running!" && exit 1)
+                    sudo systemctl is-active --quiet fast.service || (echo "❌ FastAPI service is not running!" && exit 1)
                     
                     # Test the endpoint
                     curl -f http://localhost:8000 || (echo "❌ FastAPI is not responding!" && exit 1)
@@ -91,7 +91,7 @@ pipeline {
             echo 'Common issues:'
             echo '  - Check if GitHub repo is accessible'
             echo '  - Verify requirements.txt exists'
-            echo '  - Check FastAPI service logs: sudo journalctl -u fastapi.service -n 50'
+            echo '  - Check FastAPI service logs: sudo journalctl -u fast.service -n 50'
         }
     }
-
+}
