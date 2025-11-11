@@ -1,18 +1,18 @@
 pipeline {
-    agent any
-    environment {
-        VENV_DIR = 'venv'
-        APP_HOST = '0.0.0.0'
-        APP_PORT = '8000'
-        APP_DIR = '/var/lib/jenkins/workspace/fastapi_colocation'
-        PID_FILE = '/var/lib/jenkins/workspace/fastapi_colocation/app.pid'
-        LOG_FILE = '/var/lib/jenkins/workspace/fastapi_colocation/app.log'
+    agent {
+        label 'deployment'  // Uses your deployment server node
     }
+    
+    environment {
+        VENV_DIR = '/data/10nov2025/app/venv'
+        APP_DIR = '/data/10nov2025/app'
+    }
+    
     stages {
         stage('Checkout') {
             steps {
                 echo '📦 Checking out code from GitHub...'
-                git branch: 'main', url: 'https://github.com/mohammad-junaid79/jenkins_CI-CD.git'
+                git branch: 'main', url: 'https://github.com/mohammad-junaid79/JENKINS_COLOCATION.git'
             }
         }
         
@@ -20,9 +20,15 @@ pipeline {
             steps {
                 echo '🐍 Setting up Python virtual environment...'
                 sh '''
+                    # Create app directory if not exists
+                    mkdir -p $APP_DIR
+                    
+                    # Create virtual environment using existing Python 3.10.12
                     if [ ! -d "$VENV_DIR" ]; then
                         python3 -m venv $VENV_DIR
                     fi
+                    
+                    # Activate and install dependencies
                     . $VENV_DIR/bin/activate
                     pip install --upgrade pip
                     pip install -r requirements.txt
@@ -30,75 +36,25 @@ pipeline {
             }
         }
         
-        stage('Stop Old Process') {
-            steps {
-                echo '🛑 Stopping old FastAPI process...'
-                sh '''
-                    # Stop by PID file if it exists
-                    if [ -f "$PID_FILE" ]; then
-                        OLD_PID=$(cat $PID_FILE)
-                        if ps -p $OLD_PID > /dev/null 2>&1; then
-                            echo "Killing process $OLD_PID"
-                            kill $OLD_PID || true
-                            sleep 2
-                            # Force kill if still running
-                            if ps -p $OLD_PID > /dev/null 2>&1; then
-                                kill -9 $OLD_PID || true
-                            fi
-                        fi
-                        rm -f $PID_FILE
-                    fi
-                    
-                    # Kill any uvicorn processes on port 8000
-                    pkill -f "uvicorn main:app" || true
-                    
-                    # Wait for port to be free
-                    sleep 3
-                    
-                    # Verify port is free
-                    if lsof -Pi :8000 -sTCP:LISTEN -t >/dev/null 2>&1; then
-                        echo "⚠️ Port 8000 still in use, force killing..."
-                        lsof -ti:8000 | xargs kill -9 || true
-                        sleep 2
-                    fi
-                    
-                    echo "✅ Old process stopped, port 8000 is free"
-                '''
-            }
-        }
-        
         stage('Deploy Code') {
             steps {
-                echo '📂 Deploying updated code...'
+                echo '📂 Deploying code to application directory...'
                 sh '''
-                    echo "✅ Code updated in workspace: $APP_DIR"
+                    # Copy application files to app directory
+                    cp -r main.py requirements.txt $APP_DIR/
+                    
+                    echo "✅ Code deployed to: $APP_DIR"
                     ls -lah $APP_DIR
                 '''
             }
         }
         
-        stage('Start Service with nohup') {
+        stage('Restart FastAPI Service') {
             steps {
-                echo '🚀 Starting FastAPI with nohup...'
+                echo '🔄 Restarting FastAPI service...'
                 sh '''
-                    cd $APP_DIR
-                    
-                    # Activate virtual environment
-                    . $VENV_DIR/bin/activate
-                    
-                    # CRITICAL: Use BUILD_ID=dontKillMe to prevent Jenkins from killing the process
-                    BUILD_ID=dontKillMe nohup uvicorn main:app \
-                        --host $APP_HOST \
-                        --port $APP_PORT \
-                        > $LOG_FILE 2>&1 &
-                    
-                    # Save PID to file
-                    echo $! > $PID_FILE
-                    
-                    echo "✅ Started uvicorn with PID: $(cat $PID_FILE)"
-                    
-                    # Wait for startup
-                    sleep 5
+                    sudo systemctl restart fastapi.service
+                    sleep 3
                 '''
             }
         }
@@ -107,41 +63,13 @@ pipeline {
             steps {
                 echo '🔍 Verifying FastAPI is running...'
                 sh '''
-                    # Check if PID file exists
-                    if [ ! -f "$PID_FILE" ]; then
-                        echo "❌ PID file not found!"
-                        exit 1
-                    fi
+                    # Check if service is active
+                    sudo systemctl is-active --quiet fastapi.service || (echo "❌ FastAPI service is not running!" && exit 1)
                     
-                    # Check if process is running
-                    PID=$(cat $PID_FILE)
-                    if ! ps -p $PID > /dev/null 2>&1; then
-                        echo "❌ Process $PID is not running!"
-                        echo "📋 Last 20 lines of log:"
-                        tail -20 $LOG_FILE
-                        exit 1
-                    fi
+                    # Test the endpoint
+                    curl -f http://localhost:8000 || (echo "❌ FastAPI is not responding!" && exit 1)
                     
-                    echo "✅ Process $PID is running"
-                    
-                    # Wait a bit more for the service to be fully ready
-                    sleep 3
-                    
-                    # Test the endpoint (retry up to 5 times)
-                    for i in 1 2 3 4 5; do
-                        if curl -f -s http://$APP_HOST:$APP_PORT > /dev/null; then
-                            echo "✅ FastAPI is responding!"
-                            curl http://$APP_HOST:$APP_PORT
-                            exit 0
-                        fi
-                        echo "Attempt $i failed, retrying..."
-                        sleep 2
-                    done
-                    
-                    echo "❌ FastAPI is not responding after 5 attempts!"
-                    echo "📋 Last 30 lines of log:"
-                    tail -30 $LOG_FILE
-                    exit 1
+                    echo "✅ FastAPI is running successfully!"
                 '''
             }
         }
@@ -149,38 +77,21 @@ pipeline {
     
     post {
         success {
+            echo '========================================='
             echo '✅ Pipeline completed successfully!'
-            echo '🚀 FastAPI running: http://192.168.35.35:8000'
-            echo '📖 API docs: http://192.168.35.35:8000/docs'
-            sh '''
-                echo "📊 Process info:"
-                ps aux | grep "[u]vicorn main:app"
-                echo ""
-                echo "📍 PID: $(cat $PID_FILE 2>/dev/null || echo 'N/A')"
-                echo "📝 Logs: $LOG_FILE"
-            '''
+            echo '========================================='
+            echo '🚀 FastAPI Application Status:'
+            echo '   - Service: Running'
+            echo '   - URL: http://192.168.35.25:8000'
+            echo '   - API Docs: http://192.168.35.25:8000/docs'
+            echo '========================================='
         }
         failure {
             echo '❌ Pipeline failed! Check the logs for details.'
-            sh '''
-                echo "📋 Application logs (last 50 lines):"
-                if [ -f "$LOG_FILE" ]; then
-                    tail -50 $LOG_FILE
-                else
-                    echo "Log file not found"
-                fi
-                
-                echo ""
-                echo "🔍 Checking for running uvicorn processes:"
-                ps aux | grep uvicorn || echo "No uvicorn processes found"
-                
-                echo ""
-                echo "🔍 Checking port 8000:"
-                lsof -i :8000 || echo "Port 8000 not in use"
-            '''
-        }
-        always {
-            echo '📊 Pipeline execution completed'
+            echo 'Common issues:'
+            echo '  - Check if GitHub repo is accessible'
+            echo '  - Verify requirements.txt exists'
+            echo '  - Check FastAPI service logs: sudo journalctl -u fastapi.service -n 50'
         }
     }
-}
+
